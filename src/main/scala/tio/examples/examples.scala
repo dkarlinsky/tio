@@ -2,6 +2,8 @@ package tio.examples
 
 import tio.{TIO, TIOApp}
 
+import scala.util.control.NonFatal
+
 object SequenceEffects extends TIOApp {
   def run = {
     for {
@@ -24,4 +26,21 @@ object ExampleWithThrow extends TIOApp {
       _ <- putStrLn("running second effect")
     } yield ()
   }
+}
+
+object FailAndRecover extends TIOApp {
+  def run = {
+    (for {
+      _ <- putStrLn("running first effect")
+      _ <- TIO.fail(new RuntimeException)
+      _ <- putStrLn("second effect - will not run")
+    } yield ()).recover {
+      case NonFatal(e) =>
+        putStrLn(s"recovered from failure: ${e.getClass.getName}")
+    }
+  }
+}
+
+object Foreach10k extends TIOApp {
+  def run = TIO.foreach(1 to 10000)(i => TIO.effect(println(i)))
 }

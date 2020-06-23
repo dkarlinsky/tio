@@ -20,6 +20,15 @@ object Runtime extends Runtime {
           case Success(res) => eval(f(res))
           case Failure(e) => Failure(e)
         }
+
+      case TIO.Fail(t) =>
+        Failure(t)
+
+      case TIO.Recover(tio, f) =>
+        eval(tio) match {
+          case Failure(e) => eval(f(e))
+          case success => success
+        }
     }
   }
 }
