@@ -1,34 +1,50 @@
 package tio
 
+import scala.concurrent._
+import scala.concurrent.duration.Duration
 import scala.util.{Failure, Success, Try}
 
 trait Runtime {
-  // Run tio and return Success/Failure
-  def unsafeRunSync[A](tio: TIO[A]): Try[A]
+  def unsafeRunAsync[A](tio: TIO[A])(callback: Try[A] => Unit): Unit
+
+  def unsafeRunSync[A](tio: TIO[A], timeout: Duration = Duration.Inf): Try[A] =
+    Await.ready(unsafeRunToFuture(tio), timeout).value.get
+
+  def unsafeRunToFuture[A](tio: TIO[A]): Future[A] = {
+    val promise = Promise[A]()
+    unsafeRunAsync(tio)(promise.tryComplete)
+    promise.future
+  }
 }
 
 object Runtime extends Runtime {
-  def unsafeRunSync[A](tio: TIO[A]): Try[A] = eval(tio)
+  override def unsafeRunAsync[A](tio: TIO[A])(callback: Try[A] => Unit): Unit = {
+    eval(tio)(callback.asInstanceOf[Try[Any] => Unit])
+  }
 
-  private def eval[A](tio: TIO[A]): Try[A] = {
+  private def eval(tio: TIO[Any])(done: Try[Any] => Unit): Unit = {
     tio match {
       case TIO.Effect(a) =>
-        Try(a())
+        done(Try(a()))
+
+      case TIO.EffectAsync(callback) => callback(done)
 
       case TIO.FlatMap(tio, f: (Any => TIO[Any])) =>
-        eval[Any](tio) match {
-          case Success(res) => eval(f(res))
-          case Failure(e) => Failure(e)
+        eval(tio) {
+          case Success(res) => eval(f(res))(done)
+          case Failure(e) => done(Failure(e))
         }
 
-      case TIO.Fail(t) =>
-        Failure(t)
+      case TIO.Fail(e) => done(Failure(e))
 
       case TIO.Recover(tio, f) =>
-        eval(tio) match {
-          case Failure(e) => eval(f(e))
-          case success => success
+        eval(tio) {
+          case Failure(e) => eval(f(e))(done)
+          case success => done(success)
         }
+
+      case TIO.EffectAsync(callback) =>
+        callback(done)
     }
   }
 }
