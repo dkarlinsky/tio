@@ -1,9 +1,9 @@
 package tio.examples
 
 import java.time.Instant
-import java.util.{Timer, TimerTask}
-import scala.concurrent.duration._
+import java.util.{Random, Timer, TimerTask}
 
+import scala.concurrent.duration._
 import tio.{TIO, TIOApp}
 
 import scala.concurrent.duration.Duration
@@ -70,6 +70,36 @@ object SleepExample extends TIOApp {
       _ <- TIO.effect(println(s"[${Instant.now}] running first effect on ${Thread.currentThread.getName}"))
       _ <- sleep(2.seconds)
       _ <- TIO.effect(println(s"[${Instant.now}] running second effect on ${Thread.currentThread.getName}"))
+    } yield ()
+  }
+}
+
+object ForkJoin extends TIOApp {
+  def run = {
+    for {
+      _      <- putStrLn("1")
+      fiber1 <- (sleep(2.seconds) *> putStrLn("2") *> TIO.succeed(1)).fork()
+      _      <- putStrLn("3")
+      i      <- fiber1.join()
+      _      <- putStrLn(s"fiber1 done: $i")
+    } yield ()
+  }
+}
+
+object ForeachParExample extends TIOApp {
+  val numbers = 1 to 10
+  val random = new Random()
+  // sleep up to 1 second, and return the duration slept
+  val sleepRandomTime = TIO.effect(random.nextInt(1000).millis)
+    .flatMap(t => sleep(t) *> TIO.succeed(t))
+  def run = {
+    for {
+      _ <- putStrLn(s"[${Instant.now}] foreach:")
+      _ <- TIO.foreach(numbers)(i => putStrLn(i.toString))
+      _ <- putStrLn(s"[${Instant.now}] foreachPar:")
+      _ <- TIO.foreachPar(numbers)(i =>
+        sleepRandomTime.flatMap(t => putStrLn(s"$i after $t")))
+      _ <- putStrLn(s"[${Instant.now}] foreachPar done")
     } yield ()
   }
 }
